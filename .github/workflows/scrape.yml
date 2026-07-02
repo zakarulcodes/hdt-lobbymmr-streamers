@@ -7,15 +7,20 @@ on:
 
 # Single in-flight run; a new trigger won't pile up on a slow one.
 concurrency:
-  group: scrape
+  group: pages
   cancel-in-progress: false
 
 permissions:
-  contents: write # needed to push the gh-pages branch
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,9 +39,11 @@ jobs:
       - name: Scrape streamers
         run: npm run scrape
 
-      - name: Publish to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./dist
-          force_orphan: true # keep gh-pages at a single rolling commit
+          path: ./dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

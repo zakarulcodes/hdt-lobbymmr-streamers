@@ -12,8 +12,9 @@ const path = require("path");
 const { chromium } = require("playwright");
 
 const MODES = ["solo", "duo"];
-const OUT_FILE = path.join(__dirname, "dist", "streamers.json");
+const OUT_FILE = path.join(__dirname, "dist", "streamers.txt");
 const USER_AGENT = "hdt-lobbymmr-streamers (https://github.com/zakarulcodes/hdt-lobbymmr-streamers)";
+const ENTRY_SEPARATOR = "\n<br />"; // matches the plugin's leaderboard file format
 
 // The table body is virtualized: only ~30 rows exist in the DOM at once,
 // swapped out as you scroll. So "Load all" just removes pagination, not
@@ -77,10 +78,13 @@ async function main() {
   }
 
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
-  const output = Object.fromEntries(
-    [...byName.values()].map(({ name, twitch, youtube }) => [name, { twitch, youtube }])
+  // "name twitchUrlOrDash youtubeUrlOrDash" per entry, same style as the
+  // leaderboard repo's flat files — keeps the plugin's parser dependency-free
+  // (no JSON library needed for a net472 WPF plugin).
+  const lines = [...byName.values()].map(
+    ({ name, twitch, youtube }) => `${name} ${twitch || "-"} ${youtube || "-"}`
   );
-  fs.writeFileSync(OUT_FILE, JSON.stringify(output, null, 2));
+  fs.writeFileSync(OUT_FILE, lines.join(ENTRY_SEPARATOR));
   console.log(`Wrote ${byName.size} entries to ${OUT_FILE}`);
 }
 

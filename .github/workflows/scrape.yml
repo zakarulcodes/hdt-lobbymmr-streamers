@@ -1,0 +1,42 @@
+name: Scrape streamers
+
+on:
+  repository_dispatch:
+    types: [scrape] # triggered externally (e.g. cron-job.org) via the GitHub API
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+# Single in-flight run; a new trigger won't pile up on a slow one.
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+permissions:
+  contents: write # needed to push the gh-pages branch
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Scrape streamers
+        run: npm run scrape
+
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          force_orphan: true # keep gh-pages at a single rolling commit

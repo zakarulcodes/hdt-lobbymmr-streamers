@@ -7,12 +7,19 @@ icon next to lobby players who are known streamers.
 
 ## How it works
 
-`scrape.js` uses Playwright to load `wallii.gg/lb/all/solo` and `wallii.gg/lb/all/duo`
-in a real (headless) browser — the same pages a visitor sees — clicks "Load all", then
-scrolls through the virtualized table collecting each row's player name and any
-Twitch/YouTube link shown next to it. wallii.gg's `robots.txt` disallows `/stats/`
-(individual profile pages) but allows `/lb/` (the leaderboard pages), which is all this
-script touches.
+`scrape.js` uses Playwright to load every `wallii.gg/lb/{region}/{mode}` leaderboard
+(all/na/eu/ap/cn × solo/duo) in a real (headless) browser — the same pages a visitor
+sees — clicks "Load all", then scrolls through the virtualized table collecting each
+row's player name and any Twitch/YouTube link shown next to it. wallii.gg's
+`robots.txt` disallows `/stats/` (individual profile pages) but allows `/lb/` (the
+leaderboard pages), which is all this script touches.
+
+Coverage note: this only finds streamers who currently rank on one of those
+leaderboards. Someone linked with wallii's bot but not ranked highly enough won't show
+up here even though wallii's own site can find them via direct name search (a page we
+deliberately don't scrape). `manual.txt` covers exactly that gap — add
+`name twitchUrlOrDash youtubeUrlOrDash` there and it always overrides scraped data for
+that name.
 
 Output is written to `dist/streamers.txt`, one entry per line (`\n<br />`-separated,
 same convention as [hdt-lobbymmr-leaderboard](https://github.com/zakarulcodes/hdt-lobbymmr-leaderboard)'s
@@ -27,26 +34,36 @@ A `-` marks a missing Twitch or YouTube link.
 
 ## Updating the data
 
-This is **run manually, not on a schedule** — wallii.gg's streamer list doesn't churn
-fast enough to need frequent re-scraping, and there's no reason to hit their pages
-often.
+**Not on a fixed GitHub-native schedule** — wallii.gg's streamer list doesn't churn
+fast enough to justify frequent re-scraping, and there's no reason to hit their pages
+often. Instead this repo has a `repository_dispatch`-triggered workflow
+(`.github/workflows/scrape.yml`) that runs the scraper in CI and publishes straight to
+`gh-pages` — fired externally (e.g. a weekly [cron-job.org](https://cron-job.org) job)
+rather than GitHub's own `schedule:` trigger, because GitHub auto-disables `schedule:`
+workflows after 60 days of repo inactivity; `repository_dispatch` has no such timeout.
+
+To wire up an external trigger, create a cron-job.org job (or any scheduler that can
+send an HTTP request) that does:
+
+```
+POST https://api.github.com/repos/zakarulcodes/hdt-lobbymmr-streamers/dispatches
+Headers:
+  Authorization: token <a fine-grained PAT scoped to just this repo, Actions: write>
+  Accept: application/vnd.github+json
+Body:
+  {"event_type": "scrape"}
+```
+
+Fine-grained PATs expire after at most a year, so the token (not the schedule) is what
+needs periodic renewal regardless of how often the job runs.
+
+You can also trigger a run manually any time from the repo's Actions tab
+(`workflow_dispatch`), or run it locally:
 
 ```
 npm install
 npx playwright install chromium
 npm run scrape
-```
-
-Then publish `dist/streamers.txt` to the `gh-pages` branch (served via GitHub Pages,
-`zakarulcodes.github.io/hdt-lobbymmr-streamers/streamers.txt`) for the plugin to fetch:
-
-```
-git checkout gh-pages
-cp dist/streamers.txt streamers.txt
-git add streamers.txt
-git commit -m "Update streamer data"
-git push
-git checkout main
 ```
 
 ## Credit

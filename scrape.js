@@ -21,14 +21,21 @@
 
 const fs = require("fs");
 const path = require("path");
-const { chromium } = require("playwright");
+// playwright is require()d lazily in main() only for a full scrape, so
+// REPUBLISH mode (which just folds in submissions) needs no dependencies.
 
 const REGIONS = ["all", "na", "eu", "ap", "cn"];
 const MODES = ["solo", "duo"];
 const MANUAL_FILE = path.join(__dirname, "manual.txt");
+const SUBMITTED_FILE = path.join(__dirname, "submitted.txt");
 const OUT_FILE = path.join(__dirname, "dist", "streamers.txt");
 const LIVE_URL = "https://zakarulcodes.github.io/hdt-lobbymmr-streamers/streamers.txt";
 const USER_AGENT = "hdt-lobbymmr-streamers (https://github.com/zakarulcodes/hdt-lobbymmr-streamers)";
+// REPUBLISH mode skips the wallii scrape entirely and just re-folds
+// submitted.txt + manual.txt into the published baseline. The submission
+// Worker fires this after each new link so it goes live in seconds without
+// hitting wallii; a full scrape (default) still runs on the weekly trigger.
+const REPUBLISH_ONLY = process.env.REPUBLISH === "1";
 const ENTRY_SEPARATOR = "\n<br />"; // matches the plugin's leaderboard file format
 
 function parseEntries(text) {
@@ -101,21 +108,22 @@ async function scrapeBoard(page, region, mode) {
   return [...byName.values()].filter((r) => r.twitch || r.youtube);
 }
 
-// manual.txt: same "name twitch|- youtube|-" format as the output, one entry
-// per line (plain newlines, no <br /> separator needed here). Lets anyone
-// who isn't leaderboard-ranked get added regardless of scrape coverage.
-// Manual entries always win over scraped ones for the same name.
-function loadManualEntries() {
-  if (!fs.existsSync(MANUAL_FILE)) return [];
+// Reads a newline-delimited override file ("name twitch|- youtube|-" per line;
+// any extra tokens like submitted.txt's trailing "by:<login>" are ignored).
+// Blank lines and "#" comments are skipped. Used for both manual.txt (hand-
+// curated) and submitted.txt (written by the submission Worker).
+function loadOverrideFile(file) {
+  if (!fs.existsSync(file)) return [];
   return fs
-    .readFileSync(MANUAL_FILE, "utf8")
-    .split("\n")
+    .readFileSync(file, "utf8")
+    .split(/\r?\n|\n<br \/>/)
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"))
     .map((line) => {
       const [name, twitch, youtube] = line.split(" ");
-      return { name, twitch: twitch !== "-" ? twitch : null, youtube: youtube !== "-" ? youtube : null };
-    });
+      return { name, twitch: twitch !== "-" ? twitch : null, youtube: youtube && youtube !== "-" ? youtube : null };
+    })
+    .filter((e) => e.name);
 }
 
 function sameUrls(a, b) {
@@ -126,36 +134,50 @@ async function main() {
   const merged = await loadPublishedEntries();
   console.log(`Loaded ${merged.size} previously-published entries as baseline`);
 
-  const browser = await chromium.launch();
-  const page = await browser.newPage({ userAgent: USER_AGENT });
+  if (REPUBLISH_ONLY) {
+    // Republish only folds submissions into the existing list — it never
+    // re-scrapes. If the baseline came back empty (fetch hiccup), bail rather
+    // than clobber the published file with just a handful of submissions.
+    if (merged.size === 0) {
+      throw new Error("REPUBLISH aborted: could not load the published baseline; refusing to overwrite it.");
+    }
+    console.log("REPUBLISH mode: skipping wallii scrape, folding in submissions only");
+  } else {
+    const { chromium } = require("playwright");
+    const browser = await chromium.launch();
+    const page = await browser.newPage({ userAgent: USER_AGENT });
 
-  const freshByName = new Map();
-  for (const region of REGIONS) {
-    for (const mode of MODES) {
-      console.log(`Scraping ${region}/${mode}...`);
-      const entries = await scrapeBoard(page, region, mode);
-      console.log(`  found ${entries.length} streamers`);
-      for (const entry of entries) {
-        if (!freshByName.has(entry.name)) freshByName.set(entry.name, entry);
+    const freshByName = new Map();
+    for (const region of REGIONS) {
+      for (const mode of MODES) {
+        console.log(`Scraping ${region}/${mode}...`);
+        const entries = await scrapeBoard(page, region, mode);
+        console.log(`  found ${entries.length} streamers`);
+        for (const entry of entries) {
+          if (!freshByName.has(entry.name)) freshByName.set(entry.name, entry);
+        }
       }
     }
+
+    await browser.close();
+
+    // Additive merge: never drop a name missing from this run, only add new
+    // names or update the URL for a name that's still found.
+    let added = 0;
+    let updated = 0;
+    for (const entry of freshByName.values()) {
+      const existing = merged.get(entry.name);
+      if (!existing) added++;
+      else if (!sameUrls(existing, entry)) updated++;
+      merged.set(entry.name, entry);
+    }
+    console.log(`${added} new, ${updated} updated, ${merged.size} total before overrides`);
   }
 
-  await browser.close();
-
-  // Additive merge: never drop a name missing from this run, only add new
-  // names or update the URL for a name that's still found.
-  let added = 0;
-  let updated = 0;
-  for (const entry of freshByName.values()) {
-    const existing = merged.get(entry.name);
-    if (!existing) added++;
-    else if (!sameUrls(existing, entry)) updated++;
-    merged.set(entry.name, entry);
-  }
-  console.log(`${added} new, ${updated} updated, ${merged.size} total before manual overrides`);
-
-  for (const entry of loadManualEntries()) merged.set(entry.name, entry);
+  // User-submitted links (via the Twitch-verified submission form), then the
+  // hand-curated manual list, which wins over everything.
+  for (const entry of loadOverrideFile(SUBMITTED_FILE)) merged.set(entry.name, entry);
+  for (const entry of loadOverrideFile(MANUAL_FILE)) merged.set(entry.name, entry);
 
   if (merged.size === 0) {
     throw new Error("No streamers found — page structure may have changed. Aborting without overwriting output.");

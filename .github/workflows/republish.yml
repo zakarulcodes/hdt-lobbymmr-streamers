@@ -1,0 +1,51 @@
+name: Republish streamers
+
+# Fast path fired by the submission Worker after a new link: re-folds
+# submitted.txt + manual.txt into the published list and redeploys Pages
+# WITHOUT re-scraping wallii (seconds, no browser, no external load). The
+# weekly "Scrape streamers" workflow still does the full refresh.
+
+on:
+  repository_dispatch:
+    types: [republish] # triggered by the submission Worker via the GitHub API
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+# Share the "pages" concurrency group with the scrape workflow so a republish
+# and a scrape never deploy on top of each other.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  republish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fold in submissions (no scrape)
+        run: npm run scrape
+        env:
+          REPUBLISH: "1"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

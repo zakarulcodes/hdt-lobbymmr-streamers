@@ -1,0 +1,13 @@
+{
+  "name": "hdt-lobbymmr-submit",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker: Twitch-verified streamer-link submission for HDT_LobbyMMR.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.80.0"
+  }
+}

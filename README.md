@@ -17,9 +17,15 @@ leaderboard pages), which is all this script touches.
 Coverage note: this only finds streamers who currently rank on one of those
 leaderboards. Someone linked with wallii's bot but not ranked highly enough won't show
 up here even though wallii's own site can find them via direct name search (a page we
-deliberately don't scrape). `manual.txt` covers exactly that gap — add
-`name twitchUrlOrDash youtubeUrlOrDash` there and it always overrides scraped data for
-that name.
+deliberately don't scrape). Two files cover that gap:
+
+- **`submitted.txt`** — written autonomously by the [submission Worker](submit-worker/)
+  when a streamer links their own channel via the Twitch-verified form. Same line
+  format plus a trailing `by:<twitch-login>` attribution token the scraper ignores.
+- **`manual.txt`** — hand-curated entries; wins over both scraped data and submissions.
+
+Precedence when the same name appears in more than one source: manual > submitted >
+scraped.
 
 Output is written to `dist/streamers.txt`, one entry per line (`\n<br />`-separated,
 same convention as [hdt-lobbymmr-leaderboard](https://github.com/zakarulcodes/hdt-lobbymmr-leaderboard)'s

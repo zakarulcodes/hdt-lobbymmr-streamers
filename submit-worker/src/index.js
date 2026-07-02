@@ -113,7 +113,9 @@ async function submit(request, env) {
   // Honeypot: real users leave this empty; bots tend to fill every field.
   if (body.website) return json({ ok: true });
 
-  const name = String(body.name || "").trim();
+  // Lowercase the name so stored data stays canonical and can't drift in case
+  // from the leaderboard/game (the plugin matches case-insensitively anyway).
+  const name = String(body.name || "").trim().toLowerCase();
   const youtube = String(body.youtube || "").trim();
   const login = session.login;
 

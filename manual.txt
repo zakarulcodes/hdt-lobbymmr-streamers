@@ -1,0 +1,5 @@
+# Manually-added streamers who aren't (currently) ranked highly enough to
+# show up on wallii.gg's /lb/ leaderboard pages, so the scraper can't find
+# them. One entry per line: "name twitchUrlOrDash youtubeUrlOrDash".
+# These always take priority over scraped data for the same name.
+soliduz https://twitch.tv/zakarul -

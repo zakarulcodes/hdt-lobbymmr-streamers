@@ -32,15 +32,24 @@ otherplayer https://twitch.tv/... -
 
 A `-` marks a missing Twitch or YouTube link.
 
+**Merge behaviour**: each run starts from the currently-published `streamers.txt`
+(fetched over HTTP, since GitHub Pages is Actions-deployed with no branch history to
+read back) rather than a fresh slate. A name is only ever added (new) or updated (URL
+changed), never removed just because it wasn't found in a given run — so a transient
+scrape miss on one board, or a streamer temporarily dropping off a leaderboard, doesn't
+lose previously-found data.
+
 ## Updating the data
 
 **Not on a fixed GitHub-native schedule** — wallii.gg's streamer list doesn't churn
 fast enough to justify frequent re-scraping, and there's no reason to hit their pages
 often. Instead this repo has a `repository_dispatch`-triggered workflow
-(`.github/workflows/scrape.yml`) that runs the scraper in CI and publishes straight to
-`gh-pages` — fired externally (e.g. a weekly [cron-job.org](https://cron-job.org) job)
-rather than GitHub's own `schedule:` trigger, because GitHub auto-disables `schedule:`
-workflows after 60 days of repo inactivity; `repository_dispatch` has no such timeout.
+(`.github/workflows/scrape.yml`) that runs the scraper in CI and publishes via GitHub
+Pages' Actions-based deployment (`actions/upload-pages-artifact` +
+`actions/deploy-pages`, no `gh-pages` branch involved) — fired externally (e.g. a
+weekly [cron-job.org](https://cron-job.org) job) rather than GitHub's own `schedule:`
+trigger, because GitHub auto-disables `schedule:` workflows after 60 days of repo
+inactivity; `repository_dispatch` has no such timeout.
 
 To wire up an external trigger, create a cron-job.org job (or any scheduler that can
 send an HTTP request) that does:
@@ -48,8 +57,9 @@ send an HTTP request) that does:
 ```
 POST https://api.github.com/repos/zakarulcodes/hdt-lobbymmr-streamers/dispatches
 Headers:
-  Authorization: token <a fine-grained PAT scoped to just this repo, Actions: write>
+  Authorization: token <a fine-grained PAT scoped to just this repo, Contents: write>
   Accept: application/vnd.github+json
+  Content-Type: application/json
 Body:
   {"event_type": "scrape"}
 ```

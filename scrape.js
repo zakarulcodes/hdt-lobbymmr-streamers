@@ -38,13 +38,21 @@ const USER_AGENT = "hdt-lobbymmr-streamers (https://github.com/zakarulcodes/hdt-
 const REPUBLISH_ONLY = process.env.REPUBLISH === "1";
 const ENTRY_SEPARATOR = "\n<br />"; // matches the plugin's leaderboard file format
 
+// Rejects the "<br"/"<br />..." garbage a previous version of this script
+// could produce from a mis-split entry (see loadOverrideFile) — defensive
+// so any of that already baked into a published/local file doesn't get
+// perpetuated forever once picked up as a baseline.
+function isPlausibleName(name) {
+  return !!name && !/[<>]/.test(name);
+}
+
 function parseEntries(text) {
   const map = new Map();
   for (const rawLine of text.split(ENTRY_SEPARATOR)) {
     const line = rawLine.trim();
     if (!line) continue;
     const [name, twitch, youtube] = line.split(" ");
-    if (!name) continue;
+    if (!isPlausibleName(name)) continue;
     map.set(name, { name, twitch: twitch !== "-" ? twitch : null, youtube: youtube !== "-" ? youtube : null });
   }
   return map;
@@ -116,14 +124,21 @@ function loadOverrideFile(file) {
   if (!fs.existsSync(file)) return [];
   return fs
     .readFileSync(file, "utf8")
-    .split(/\r?\n|\n<br \/>/)
+    // Two-stage split, not a single "\r?\n|\n<br \/>" regex: that alternation
+    // is ambiguous because "\r?\n" (zero-or-one \r) also matches a bare "\n",
+    // so it always wins over the longer "\n<br />" alternative at the same
+    // position — leaving "<br />" glued onto the next entry and corrupting
+    // its parse. Splitting on the literal separator first, then any plain
+    // newlines within each chunk, has no such ambiguity.
+    .split(ENTRY_SEPARATOR)
+    .flatMap((chunk) => chunk.split(/\r?\n/))
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"))
     .map((line) => {
       const [name, twitch, youtube] = line.split(" ");
       return { name, twitch: twitch !== "-" ? twitch : null, youtube: youtube && youtube !== "-" ? youtube : null };
     })
-    .filter((e) => e.name);
+    .filter((e) => isPlausibleName(e.name));
 }
 
 function sameUrls(a, b) {
